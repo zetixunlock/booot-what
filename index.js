@@ -5,7 +5,6 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 const express = require('express');
-const cron = require('node-cron');
 const QRCode = require('qrcode');
 
 const app = express();
@@ -14,48 +13,20 @@ const port = process.env.PORT || 3000;
 let currentQR = '';
 
 app.get('/', (req, res) => {
-  res.send('🤖 Zetix-Unlock-Bot está en línea y funcionando 24/7!');
+  res.send('🤖 Zetix-Unlock-Bot está activo.');
 });
 
 app.get('/qr', async (req, res) => {
-  if (!currentQR) {
-    return res.send(`
-      <div style="text-align: center; font-family: sans-serif; margin-top: 50px;">
-        <h2>⌛ Esperando código QR o bot ya conectado...</h2>
-        <p>Si el bot ya está vinculado, no se mostrará ningún QR.</p>
-      </div>
-    `);
-  }
-
+  if (!currentQR) return res.send('<h2>⌛ Esperando QR o bot ya conectado.</h2>');
   try {
     const qrImageUrl = await QRCode.toDataURL(currentQR);
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Escanear QR - Zetix Bot</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; background: #0b141a; color: #fff; }
-            img { border: 10px solid white; border-radius: 12px; max-width: 300px; }
-            h1 { font-size: 20px; margin-bottom: 20px; }
-          </style>
-        </head>
-        <body>
-          <h1>📲 ESCANEA ESTE CÓDIGO QR CON WHATSAPP</h1>
-          <img src="${qrImageUrl}" alt="Código QR" />
-          <p style="margin-top: 20px; color: #8696a0;">Abre WhatsApp > Dispositivos vinculados > Vincular un dispositivo</p>
-        </body>
-      </html>
-    `);
+    res.send(`<div style="text-align:center"><img src="${qrImageUrl}" /></div>`);
   } catch (err) {
-    res.status(500).send('Error generando la imagen del QR');
+    res.status(500).send('Error QR');
   }
 });
 
-app.listen(port, () => {
-  console.log(`🌐 Servidor corriendo en el puerto ${port}`);
-});
+app.listen(port, () => console.log(`🌐 Servidor en puerto ${port}`));
 
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -71,95 +42,56 @@ async function connectToWhatsApp() {
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      currentQR = qr;
-      console.log('📲 ¡Nuevo código QR generado! Ingresa a /qr para vincular.');
-    }
-
+    if (qr) currentQR = qr;
     if (connection === 'close') {
       currentQR = '';
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) {
-        console.log('🔄 Reconectando...');
-        connectToWhatsApp();
-      } else {
-        console.log('❌ Sesión cerrada.');
-      }
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      if (shouldReconnect) connectToWhatsApp();
     } else if (connection === 'open') {
       currentQR = '';
-      console.log('✅ ¡Conexión establecida con éxito con WhatsApp!');
+      console.log('✅ ¡CONEXIÓN EXITOSA CON WHATSAPP!');
     }
   });
 
-  sock.ev.on('messages.upsert', async (m) => {
-    try {
-      for (const msg of m.messages) {
-        if (!msg.message || msg.key.fromMe) continue;
+  // DIAGNÓSTICO DE MENSAJES
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    console.log('📩 Evento messages.upsert recibido. Tipo:', type);
 
-        const from = msg.key.remoteJid;
-        const isGroup = from.endsWith('@g.us');
-        
-        const body = 
-          msg.message.conversation || 
-          msg.message.extendedTextMessage?.text || 
-          '';
+    for (const msg of messages) {
+      console.log('📄 Mensaje recibido:', JSON.stringify(msg, null, 2));
 
-        const command = body.trim().toLowerCase();
+      if (!msg.message) continue;
 
-        // Comando !help
-        if (command === '!help' || command === '!menu') {
-          const helpText = 
-            `📋 *MENÚ DE COMANDOS - ZETIX UNLOCK BOT* 🤖\n\n` +
-            `🔹 *!ping* : Verifica la conexión del bot.\n` +
-            `🔹 *!todos* : Etiqueta a todos los miembros (solo grupos).\n` +
-            `🔹 *!help* : Muestra este menú.\n\n` +
-            `>By Zetix-Unlock-Bot`;
+      const from = msg.key.remoteJid;
+      const isGroup = from.endsWith('@g.us');
+      const body =
+        msg.message.conversation ||
+        msg.message.extendedTextMessage?.text ||
+        '';
 
-          await sock.sendMessage(from, { text: helpText });
-        }
+      console.log(`💬 Texto detectado: "${body}" | Desde: ${from}`);
 
-        // Comando !ping
-        if (command === '!ping') {
-          await sock.sendMessage(from, {
-            text: `🏓 *¡Pong!* El bot está activo y respondiendo. ⚡\n\n>By Zetix-Unlock-Bot`
-          });
-        }
+      const command = body.trim().toLowerCase();
 
-        // Comando !todos
-        if (command === '!todos' && isGroup) {
-          const groupMetadata = await sock.groupMetadata(from);
-          const groupName = groupMetadata.subject;
-          const participants = groupMetadata.participants;
-
-          let mentions = [];
-          let text = `📣 *LLAMADO GENERAL EN ${groupName.toUpperCase()}* 📣\n\n`;
-
-          for (let participant of participants) {
-            mentions.push(participant.id);
-            text += `👉 @${participant.id.split('@')[0]}\n`;
-          }
-
-          text += `\n💬 *Atención a todos los miembros.*\n\n>By Zetix-Unlock-Bot`;
-          await sock.sendMessage(from, { text, mentions });
-        }
-
-        // Anti-link
-        if (isGroup && (body.includes('chat.whatsapp.com/') || body.includes('wa.me/'))) {
-          await sock.sendMessage(from, {
-            text: `⚠️ *¡ALERTA DE ANTI-LINK!* ⚠️\n\nEnlaces no permitidos. 🚫\n\n>By Zetix-Unlock-Bot`
-          });
-          await sock.sendMessage(from, { delete: msg.key });
-        }
+      if (command === '!ping') {
+        console.log('🚀 Respondiendo a !ping...');
+        await sock.sendMessage(from, { text: '🏓 ¡Pong! El bot está respondiendo.' });
       }
-    } catch (err) {
-      console.error('Error procesando mensaje:', err);
-    }
-  });
 
-  cron.schedule('0 9 * * *', () => {
-    console.log('⏰ Tarea automatizada activa.');
+      if (command === '!help' || command === '!menu') {
+        await sock.sendMessage(from, {
+          text: '📋 *MENÚ:* !ping, !todos, !help\n\n>By Zetix-Unlock-Bot'
+        });
+      }
+
+      if (command === '!todos' && isGroup) {
+        const groupMetadata = await sock.groupMetadata(from);
+        const participants = groupMetadata.participants;
+        let mentions = participants.map(p => p.id);
+        let text = `📣 *ATENCIÓN A TODOS*\n\n` + mentions.map(m => `@${m.split('@')[0]}`).join('\n');
+        await sock.sendMessage(from, { text, mentions });
+      }
+    }
   });
 }
 
