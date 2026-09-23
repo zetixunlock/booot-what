@@ -13,19 +13,16 @@ const port = process.env.PORT || 3000;
 
 let currentQR = '';
 
-// Servidor Web Express
 app.get('/', (req, res) => {
   res.send('🤖 Zetix-Unlock-Bot está en línea y funcionando 24/7!');
 });
 
-// Ruta visual para escanear el QR desde el navegador
 app.get('/qr', async (req, res) => {
   if (!currentQR) {
     return res.send(`
       <div style="text-align: center; font-family: sans-serif; margin-top: 50px;">
-        <h2>⌛ Esperando o ya conectado...</h2>
+        <h2>⌛ Esperando código QR o bot ya conectado...</h2>
         <p>Si el bot ya está vinculado, no se mostrará ningún QR.</p>
-        <p>Si estás iniciando, recarga la página en unos segundos.</p>
       </div>
     `);
   }
@@ -77,7 +74,7 @@ async function connectToWhatsApp() {
 
     if (qr) {
       currentQR = qr;
-      console.log('📲 ¡Nuevo código QR listo! Míralo en tu enlace de Render agregando /qr al final.');
+      console.log('📲 ¡Nuevo código QR generado! Ingresa a /qr para vincular.');
     }
 
     if (connection === 'close') {
@@ -85,7 +82,10 @@ async function connectToWhatsApp() {
       const shouldReconnect =
         lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) {
+        console.log('🔄 Reconectando...');
         connectToWhatsApp();
+      } else {
+        console.log('❌ Sesión cerrada.');
       }
     } else if (connection === 'open') {
       currentQR = '';
@@ -93,67 +93,65 @@ async function connectToWhatsApp() {
     }
   });
 
-  // Bienvenida a grupos
-  sock.ev.on('group-participants.update', async (update) => {
-    try {
-      const { id, participants, action } = update;
-      if (action === 'add') {
-        const groupMetadata = await sock.groupMetadata(id);
-        const groupName = groupMetadata.subject;
-
-        for (const num of participants) {
-          const welcomeMessage = `✨ *¡BIENVENIDO/A AL GRUPO!* ✨\n\n` +
-            `Hola @${num.split('@')[0]} 👋, nos alegra tenerte en *${groupName}* 🎉.\n\n` +
-            `Por favor respeta las reglas de la comunidad y disfruta de tu estadía. 🤝\n\n` +
-            `>By Zetix-Unlock-Bot`;
-
-          await sock.sendMessage(id, { text: welcomeMessage, mentions: [num] });
-        }
-      }
-    } catch (err) {
-      console.error('Error en bienvenida:', err);
-    }
-  });
-
-  // Mensajes y Comandos
   sock.ev.on('messages.upsert', async (m) => {
     try {
-      const msg = m.messages[0];
-      if (!msg.message || msg.key.fromMe) return;
+      for (const msg of m.messages) {
+        if (!msg.message || msg.key.fromMe) continue;
 
-      const from = msg.key.remoteJid;
-      const isGroup = from.endsWith('@g.us');
-      const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-      const command = body.trim().toLowerCase();
+        const from = msg.key.remoteJid;
+        const isGroup = from.endsWith('@g.us');
+        
+        const body = 
+          msg.message.conversation || 
+          msg.message.extendedTextMessage?.text || 
+          '';
 
-      if (command === '!ping') {
-        await sock.sendMessage(from, {
-          text: `🏓 *¡Pong!* El bot está activo y respondiendo a toda velocidad. ⚡\n\n>By Zetix-Unlock-Bot`
-        });
-      }
+        const command = body.trim().toLowerCase();
 
-      if (command === '!todos' && isGroup) {
-        const groupMetadata = await sock.groupMetadata(from);
-        const groupName = groupMetadata.subject;
-        const participants = groupMetadata.participants;
+        // Comando !help
+        if (command === '!help' || command === '!menu') {
+          const helpText = 
+            `📋 *MENÚ DE COMANDOS - ZETIX UNLOCK BOT* 🤖\n\n` +
+            `🔹 *!ping* : Verifica la conexión del bot.\n` +
+            `🔹 *!todos* : Etiqueta a todos los miembros (solo grupos).\n` +
+            `🔹 *!help* : Muestra este menú.\n\n` +
+            `>By Zetix-Unlock-Bot`;
 
-        let mentions = [];
-        let text = `📣 *LLAMADO GENERAL EN ${groupName.toUpperCase()}* 📣\n\n`;
-
-        for (let participant of participants) {
-          mentions.push(participant.id);
-          text += `👉 @${participant.id.split('@')[0]}\n`;
+          await sock.sendMessage(from, { text: helpText });
         }
 
-        text += `\n💬 *Atención a todos los miembros del grupo.*\n\n>By Zetix-Unlock-Bot`;
-        await sock.sendMessage(from, { text, mentions });
-      }
+        // Comando !ping
+        if (command === '!ping') {
+          await sock.sendMessage(from, {
+            text: `🏓 *¡Pong!* El bot está activo y respondiendo. ⚡\n\n>By Zetix-Unlock-Bot`
+          });
+        }
 
-      if (isGroup && (body.includes('chat.whatsapp.com/') || body.includes('wa.me/'))) {
-        await sock.sendMessage(from, {
-          text: `⚠️ *¡ALERTA DE ANTI-LINK!* ⚠️\n\nEstá prohibido enviar enlaces de WhatsApp en este grupo. 🚫\n\n>By Zetix-Unlock-Bot`
-        });
-        await sock.sendMessage(from, { delete: msg.key });
+        // Comando !todos
+        if (command === '!todos' && isGroup) {
+          const groupMetadata = await sock.groupMetadata(from);
+          const groupName = groupMetadata.subject;
+          const participants = groupMetadata.participants;
+
+          let mentions = [];
+          let text = `📣 *LLAMADO GENERAL EN ${groupName.toUpperCase()}* 📣\n\n`;
+
+          for (let participant of participants) {
+            mentions.push(participant.id);
+            text += `👉 @${participant.id.split('@')[0]}\n`;
+          }
+
+          text += `\n💬 *Atención a todos los miembros.*\n\n>By Zetix-Unlock-Bot`;
+          await sock.sendMessage(from, { text, mentions });
+        }
+
+        // Anti-link
+        if (isGroup && (body.includes('chat.whatsapp.com/') || body.includes('wa.me/'))) {
+          await sock.sendMessage(from, {
+            text: `⚠️ *¡ALERTA DE ANTI-LINK!* ⚠️\n\nEnlaces no permitidos. 🚫\n\n>By Zetix-Unlock-Bot`
+          });
+          await sock.sendMessage(from, { delete: msg.key });
+        }
       }
     } catch (err) {
       console.error('Error procesando mensaje:', err);
