@@ -6,13 +6,54 @@ const {
 } = require('@whiskeysockets/baileys');
 const express = require('express');
 const cron = require('node-cron');
-const qrcode = require('qrcode-terminal');
+const QRCode = require('qrcode');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+let currentQR = '';
+
+// Servidor Web Express
 app.get('/', (req, res) => {
   res.send('🤖 Zetix-Unlock-Bot está en línea y funcionando 24/7!');
+});
+
+// Ruta visual para escanear el QR desde el navegador
+app.get('/qr', async (req, res) => {
+  if (!currentQR) {
+    return res.send(`
+      <div style="text-align: center; font-family: sans-serif; margin-top: 50px;">
+        <h2>⌛ Esperando o ya conectado...</h2>
+        <p>Si el bot ya está vinculado, no se mostrará ningún QR.</p>
+        <p>Si estás iniciando, recarga la página en unos segundos.</p>
+      </div>
+    `);
+  }
+
+  try {
+    const qrImageUrl = await QRCode.toDataURL(currentQR);
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Escanear QR - Zetix Bot</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; background: #0b141a; color: #fff; }
+            img { border: 10px solid white; border-radius: 12px; max-width: 300px; }
+            h1 { font-size: 20px; margin-bottom: 20px; }
+          </style>
+        </head>
+        <body>
+          <h1>📲 ESCANEA ESTE CÓDIGO QR CON WHATSAPP</h1>
+          <img src="${qrImageUrl}" alt="Código QR" />
+          <p style="margin-top: 20px; color: #8696a0;">Abre WhatsApp > Dispositivos vinculados > Vincular un dispositivo</p>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    res.status(500).send('Error generando la imagen del QR');
+  }
 });
 
 app.listen(port, () => {
@@ -35,24 +76,24 @@ async function connectToWhatsApp() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log('\n==================================================');
-      console.log('📲 ESCANEA ESTE CÓDIGO QR DESDE TU WHATSAPP:');
-      console.log('==================================================\n');
-      qrcode.generate(qr, { small: true });
+      currentQR = qr;
+      console.log('📲 ¡Nuevo código QR listo! Míralo en tu enlace de Render agregando /qr al final.');
     }
 
     if (connection === 'close') {
+      currentQR = '';
       const shouldReconnect =
         lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) {
         connectToWhatsApp();
       }
     } else if (connection === 'open') {
+      currentQR = '';
       console.log('✅ ¡Conexión establecida con éxito con WhatsApp!');
     }
   });
 
-  // Bienvenida a nuevos miembros
+  // Bienvenida a grupos
   sock.ev.on('group-participants.update', async (update) => {
     try {
       const { id, participants, action } = update;
@@ -74,7 +115,7 @@ async function connectToWhatsApp() {
     }
   });
 
-  // Comandos y Anti-Link
+  // Mensajes y Comandos
   sock.ev.on('messages.upsert', async (m) => {
     try {
       const msg = m.messages[0];
