@@ -27,7 +27,7 @@ async function connectToWhatsApp() {
   const sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: true
+    printQRInTerminal: false
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -99,7 +99,7 @@ async function connectToWhatsApp() {
 
       const command = body.trim().toLowerCase();
 
-      // Comando de prueba /ping
+      // Comando de prueba !ping
       if (command === '!ping') {
         await sock.sendMessage(from, {
           text: `🏓 *¡Pong!* El bot está activo y respondiendo a toda velocidad. ⚡\n\n>By Zetix-Unlock-Bot`
@@ -130,7 +130,6 @@ async function connectToWhatsApp() {
         await sock.sendMessage(from, {
           text: `⚠️ *¡ALERTA DE ANTI-LINK!* ⚠️\n\nEstá prohibido enviar enlaces de WhatsApp en este grupo. 🚫\n\n>By Zetix-Unlock-Bot`
         });
-        // Si el bot es admin, puedes activar eliminar el mensaje
         await sock.sendMessage(from, { delete: msg.key });
       }
     } catch (err) {
@@ -138,9 +137,9 @@ async function connectToWhatsApp() {
     }
   });
 
-  // Tarea programada opcional cada día a las 9:00 AM (Ejemplo)
+  // Tarea programada opcional
   cron.schedule('0 9 * * *', () => {
-    console.log('⏰ Ejecutando tarea automatizada diaria...');
+    console.log('⏰ Tarea automatizada activa.');
   });
 }
 
