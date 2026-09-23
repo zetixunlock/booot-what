@@ -24,7 +24,6 @@ app.get('/qr', async (req, res) => {
     return res.send(`
       <div style="font-family:sans-serif;text-align:center;margin-top:50px;">
         <h2>⌛ Esperando código QR o bot ya conectado...</h2>
-        <p>Si ya lo escaneaste, revisa los logs de Render.</p>
       </div>
     `);
   }
@@ -47,13 +46,15 @@ async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
+  console.log(`🔄 Iniciando Baileys con versión v${version.join('.')}`);
+
   const sock = makeWASocket({
     version,
     auth: state,
     printQRInTerminal: false,
     syncFullHistory: false,
     markOnlineOnConnect: true,
-    browser: ["Zetix Bot", "Chrome", "1.0.0"]
+    browser: ["Ubuntu", "Chrome", "20.0.04"]
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -96,6 +97,8 @@ async function connectToWhatsApp() {
           msg.message.conversation ||
           msg.message.extendedTextMessage?.text ||
           '';
+
+        console.log(`📩 Mensaje recibido de ${from}: "${body}"`);
 
         if (body.includes('>By Zetix-Unlock-Bot')) continue;
 
