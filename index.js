@@ -19,7 +19,7 @@ let sock = null;
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 
 app.get('/', (req, res) => {
-  res.send('🤖 Zetix-Unlock-Bot activo.');
+  res.send('🔓 Zetix-Unlock-Bot activo.');
 });
 
 app.get('/reset-session', (req, res) => {
@@ -32,7 +32,7 @@ app.get('/reset-session', (req, res) => {
     if (fs.existsSync(AUTH_DIR)) {
       fs.rmSync(AUTH_DIR, { recursive: true, force: true });
     }
-    res.send('<h2 style="color:green;text-align:center;margin-top:50px;">🧹 Sesión eliminada. Redirigiendo en 3 segundos...</h2><script>setTimeout(()=>{window.location.href="/qr"}, 3000);</script>');
+    res.send('<h2 style="color:green;text-align:center;margin-top:50px;">✔ Sesión eliminada. Redirigiendo en 3 segundos...</h2><script>setTimeout(()=>{window.location.href="/qr"},3000)</script>');
     setTimeout(connectToWhatsApp, 1500);
   } catch (err) {
     res.send('Error: ' + err.message);
@@ -43,8 +43,8 @@ app.get('/qr', async (req, res) => {
   if (!currentQR) {
     return res.send(`
       <div style="text-align:center;margin-top:50px;font-family:sans-serif;">
-        <h2>⌛ Esperando código QR o bot ya conectado...</h2>
-        <p>Si la consola no avanza, haz <a href="/reset-session">clic aquí para forzar el reinicio</a>.</p>
+        <h2>⏳ Esperando código QR o bot ya conectado...</h2>
+        <p>Si la consola no avanza, haz <a href="/reset-session">clic aquí para forzar el reinicio</a></p>
       </div>
     `);
   }
@@ -52,10 +52,10 @@ app.get('/qr', async (req, res) => {
     const qrImageUrl = await QRCode.toDataURL(currentQR);
     res.send(`
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0b141a;color:#fff;font-family:sans-serif;">
-        <h2>📲 ESCANEA ESTE CÓDIGO CON WHATSAPP</h2>
+        <h2>📱 ESCANEA ESTE CÓDIGO CON WHATSAPP</h2>
         <img src="${qrImageUrl}" style="border:10px solid #fff;border-radius:12px;max-width:300px;" />
         <br/><br/>
-        <a href="/reset-session" style="color:#ff6b6b;text-decoration:none;border:1px solid #ff6b6b;padding:10px;border-radius:5px;">⚠️ Generar un nuevo QR (Limpiar sesión)</a>
+        <a href="/reset-session" style="color:#ff6b6b;text-decoration:none;border:1px solid #ff6b6b;padding:10px;border-radius:5px;">⚠ Generar un nuevo código</a>
       </div>
     `);
   } catch (err) {
@@ -77,6 +77,20 @@ function extractMessageText(msg) {
     m.ephemeralMessage?.message?.conversation ||
     ''
   );
+}
+
+// Reintenta el envío de un mensaje si la sesión de Signal aún no está lista
+// (evita el error "SessionError: No sessions" justo después de reconectar)
+async function sendWithRetry(jid, content, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await sock.sendMessage(jid, content);
+    } catch (err) {
+      console.log(`⚠️ Intento ${i + 1} de envío falló: ${err.message}. Reintentando...`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  console.log('❌ No se pudo enviar el mensaje tras varios intentos.');
 }
 
 async function connectToWhatsApp() {
@@ -106,28 +120,28 @@ async function connectToWhatsApp() {
 
     if (qr) {
       currentQR = qr;
-      console.log('📲 CÓDIGO QR LISTO EN /qr');
+      console.log('📱 CÓDIGO QR LISTO EN /qr');
     }
 
     if (connection === 'close') {
       currentQR = '';
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      console.log('⚠️ Conexión cerrada. Código de error:', statusCode);
-      
+      console.log('⚠ Conexión cerrada. Código de error:', statusCode);
+
       // Si el cierre fue por desconexión del usuario, borrar credenciales
       if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-        console.log('🧹 Usuario desconectado. Limpiando credenciales...');
+        console.log('✘ Usuario desconectado. Limpiando credenciales...');
         try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch (e) {}
       }
-      
+
       console.log('🔄 Reintentando conexión en 3 segundos...');
       setTimeout(connectToWhatsApp, 3000);
-      
+
     } else if (connection === 'open') {
       currentQR = '';
-      console.log('========================================================');
+      console.log('=====================================================');
       console.log('✅ ¡CONEXIÓN EXITOSA! EL BOT ESTÁ LISTO Y RESPONDIENDO.');
-      console.log('========================================================');
+      console.log('=====================================================');
     }
   });
 
@@ -148,7 +162,7 @@ async function connectToWhatsApp() {
 
         if (command === '!ping') {
           console.log('⚡ Ejecutando !ping...');
-          await sock.sendMessage(from, { text: '🏓 *¡Pong!* El bot está activo y responde en Render.\n\n>By Zetix-Unlock-Bot' });
+          await sendWithRetry(from, { text: '🏓 *¡Pong!* El bot está activo y responde en Render.\n\n>By Zetix-Unlock-Bot' });
         }
       }
     } catch (err) {
