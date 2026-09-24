@@ -79,15 +79,24 @@ function extractMessageText(msg) {
   );
 }
 
-// Reintenta el envío de un mensaje si la sesión de Signal aún no está lista
-// (evita el error "SessionError: No sessions" justo después de reconectar)
+// Reintenta el envío de un mensaje si la sesión de Signal aún no está lista.
+// Para grupos, primero fuerza la carga de metadata (participantes y claves)
+// ya que sin eso Baileys no puede cifrar el mensaje y falla con "No sessions".
 async function sendWithRetry(jid, content, retries = 3) {
+  if (jid.endsWith('@g.us')) {
+    try {
+      await sock.groupMetadata(jid);
+    } catch (e) {
+      console.log('⚠️ No se pudo obtener metadata del grupo:', e.message);
+    }
+  }
+
   for (let i = 0; i < retries; i++) {
     try {
       return await sock.sendMessage(jid, content);
     } catch (err) {
       console.log(`⚠️ Intento ${i + 1} de envío falló: ${err.message}. Reintentando...`);
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 3000));
     }
   }
   console.log('❌ No se pudo enviar el mensaje tras varios intentos.');
