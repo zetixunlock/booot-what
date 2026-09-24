@@ -181,7 +181,7 @@ async function connectToWhatsApp() {
         const body = extractMessageText(msg);
 
         // Omitir si no hay texto o es el propio bot
-        if (!body || msg.key.fromMe || body.includes('>By Zetix-Unlock-Bot')) continue;
+        if (!body || msg.key.fromMe || body.includes('> By Zetix-Unlock-Bot')) continue;
 
         console.log(`📩 Recibido de ${from}: "${body}"`);
 
