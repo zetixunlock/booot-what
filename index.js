@@ -80,8 +80,12 @@ function extractMessageText(msg) {
 }
 
 // Reintenta el envío de un mensaje si la sesión de Signal aún no está lista.
-// Para grupos, primero fuerza la carga de metadata (participantes y claves)
-// ya que sin eso Baileys no puede cifrar el mensaje y falla con "No sessions".
+// Para grupos, primero fuerza la carga de metadata (participantes y claves).
+// Si el remitente usa un identificador @lid (número oculto por privacidad),
+// Baileys a veces no logra construir la sesión de cifrado (bug conocido y
+// aún en desarrollo upstream). En ese caso no tiene sentido reintentar 3
+// veces completas: se intenta 1 vez extra y se registra claramente el motivo
+// en vez de generar spam de logs inútil.
 async function sendWithRetry(jid, content, retries = 3) {
   if (jid.endsWith('@g.us')) {
     try {
@@ -91,15 +95,29 @@ async function sendWithRetry(jid, content, retries = 3) {
     }
   }
 
-  for (let i = 0; i < retries; i++) {
+  const isLid = jid.includes('@lid');
+  const attempts = isLid ? 2 : retries;
+
+  for (let i = 0; i < attempts; i++) {
     try {
       return await sock.sendMessage(jid, content);
     } catch (err) {
-      console.log(`⚠️ Intento ${i + 1} de envío falló: ${err.message}. Reintentando...`);
+      const isSessionError = /no sessions/i.test(err.message);
+
+      if (isLid && isSessionError) {
+        console.log(`⚠️ Intento ${i + 1}/${attempts} falló por identidad @lid sin sesión disponible (limitación conocida de Baileys con números ocultos).`);
+      } else {
+        console.log(`⚠️ Intento ${i + 1}/${attempts} de envío falló: ${err.message}. Reintentando...`);
+      }
       await new Promise(r => setTimeout(r, 3000));
     }
   }
-  console.log('❌ No se pudo enviar el mensaje tras varios intentos.');
+
+  if (isLid) {
+    console.log('❌ No se pudo enviar: el remitente usa número oculto (@lid) y Baileys no pudo establecer sesión de cifrado con él en este momento.');
+  } else {
+    console.log('❌ No se pudo enviar el mensaje tras varios intentos.');
+  }
 }
 
 async function connectToWhatsApp() {
